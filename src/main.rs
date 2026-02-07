@@ -1,4 +1,10 @@
 use std::collections::HashMap;
+use std::thread;
+use std::fs;
+use ansi_term::Colour::{Green, Red};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use tabled::{Table, builder::Builder, settings::{Style, Color, Modify, object::Rows,}};
+use std::time::Duration;
 use std::process;
 use std::io;
 
@@ -14,7 +20,8 @@ struct PostMachine {
   tape: Tape,
   buffer: Buffer,
   prev_error: Option<Error>,
-  message: Option<String>
+  message: Option<String>,
+  speedms: u64
 }
 
 enum Error {
@@ -23,6 +30,8 @@ enum Error {
   InvalidFormat(usize),
   UndefinedCommand(usize, String),
   InvalidLine(usize),
+  CommandInEditMode,
+  WrongSpeed
 }
 
 enum Command {
@@ -46,7 +55,8 @@ impl PostMachine {
         cur: 0
       },
       prev_error: None,
-      message: Some("/h - список команд".to_string())
+      message: Some("/h - справка".to_string()),
+      speedms: 300
     }
   }
 
@@ -59,69 +69,129 @@ impl PostMachine {
     self.coding();
   }
 
+  fn printui(&mut self) {
+    print!("\x1B[2J\x1B[1;1H");
+
+    
+    let mut builder = Builder::default();
+    // for i in self.tape.cur-8..=self.tape.cur+8 {
+    //   if i < 0 || (i).abs() > 9 {
+    //     print!("{i} ");
+    //   }
+    //   else if i.abs() > 99 {
+    //     print!("{i}");
+    //   }
+    //   else {
+    //     print!(" {i} ");
+    //   }
+      
+    // }
+
+    builder.push_record((self.tape.cur-8..=self.tape.cur+8).map(|i| i.to_string()));
+    let mut v: Vec<String> = Vec::new();
+    println!();
+    for pos in self.tape.cur-8..=self.tape.cur+8 {
+      let val = self.tape.map.get(&pos).unwrap_or(&0);
+      if pos == self.tape.cur {
+        let green_open  = Red.paint(">").to_string();
+        let green_close = Red.paint("<").to_string();
+        v.push(format!("{green_open}{val}{green_close}"));
+      }
+      else {
+        v.push(val.to_string());
+      }
+    }
+    builder.push_record(v);
+    let mut table = builder.build();
+    table.to_string();
+    table.with(Style::modern());
+    table.with(Modify::new(Rows::first()).with(Color::FG_GREEN));
+    println!("{table}");
+    
+    match &self.message {
+      None => {}
+      Some(s) => {
+        println!("{}", s);
+      }
+    }
+
+    println!();
+    for i in 0..self.buffer.cmds.len() {
+      if i == self.buffer.cur.try_into().unwrap() {
+        println!("> {} | {}", i+1, self.buffer.cmds[i]);
+      }
+      else {
+        println!("  {} | {}", i+1, self.buffer.cmds[i]);
+      }
+    }
+    println!();
+
+    // if cfg!(debug_assertions) {
+    //     println!("{:?} {}", self.buffer.cmds, k);
+    // }
+
+    match &self.prev_error {
+      None => {}
+      Some(err) => match err {
+        Error::UndefinedUserCommand => {
+          println!("Несуществующая команда!");
+        }
+        Error::InvalidUserLine => {
+          println!("Несуществующая строка!");
+        }
+        Error::InvalidFormat(e) => {
+          println!("{}: Неверный формат команды!", e);
+        }
+        Error::InvalidLine(e) => {
+          println!("{}: Переход на несуществующую строку!", e);
+        }
+        Error::UndefinedCommand(e, s) => {
+          println!("{}: Команда '{}' не найдена!", e, s);
+        }
+        Error::CommandInEditMode => {
+          println!("Команды в режиме редактирования недостпупны!");
+        }
+        Error::WrongSpeed => {
+          println!("Неправильный формат скорости!");
+        }
+      }
+    }
+  }
+
   fn coding(&mut self) {
     loop {
-      let mut k = self.buffer.cur;
-      print!("\x1B[2J\x1B[1;1H");
-      self.print_state();
+      let k = self.buffer.cmds.len();
       
-      match &self.message {
-        None => {}
-        Some(s) => {
-          println!("{}", s);
-        }
-      }
-
-      println!();
-      self.print_buffer();
-      println!();
-
-      // if cfg!(debug_assertions) {
-      //     println!("{:?} {}", self.buffer.cmds, k);
-      // }
-
-      match &self.prev_error {
-        None => {}
-        Some(err) => match err {
-          Error::UndefinedUserCommand => {
-            println!("Несуществующая команда!");
-          }
-          Error::InvalidUserLine => {
-            println!("Несуществующая строка!");
-          }
-          Error::InvalidFormat(e) => {
-            println!("{}: Неверный формат команды!", e);
-          }
-          Error::InvalidLine(e) => {
-            println!("{}: Переход на несуществующую строку!", e);
-          }
-          Error::UndefinedCommand(e, s) => {
-            println!("{}: Команда '{}' не найдена!", e, s);
-          }
-        }
-      }
+      self.printui();
 
       let mut st = String::new();
       io::stdin()
         .read_line(&mut st)
-        .expect("Ошибка ввода");
+        .expect("");
 
       st = st.trim().to_string();
 
       if st.is_empty() {
+        self.message = None;
         continue;
       }
 
-
       if st.chars()
-            .next() == Some('/') {
+            .next().unwrap() == '/' {
             
             let cmd_usr = &st[1..];
 
             match cmd_usr.parse::<usize>() {
               Ok(v) => {
                 if v <= k && v > 0 {
-                    self.coding_edit(v);
+                  self.prev_error = None;
+                    match self.coding_edit(v) {
+                        Ok(_) => {}
+                        Err(e) => {
+                          self.prev_error = Some(e);
+                          continue;
+                        }
+                    }
                 }
                 else {
                   self.prev_error = Some(Error::InvalidUserLine);
@@ -136,21 +206,35 @@ impl PostMachine {
                     }
                     "s" => {
                       match self.compile_code() {
-                        Ok(_) => {
-
+                        Ok(cmds) => {
+                          self.prev_error = None;
+                          self.message = None;
+                          self.execute(&cmds);
                         }
                         Err(e) => {
                           self.prev_error = Some(e);
                           continue;
                         }
                       }                 
+                    }
+                    "sp" => {
+                      self.message = None;
+                      self.prev_error = None;
+                      match self.new_sp() {
+                          Ok(_) => {continue;}
+                          Err(e) => {
+                            self.prev_error = Some(e);
+                            continue;
+                          }
 
+                      }
                     }
                     "e" => {
 
                     }
                     "h" => {
-                      self.message = Some("Дима лох".to_string());
+                      let text = fs::read_to_string("src/help.txt").unwrap();
+                      self.message = Some(text);
                       self.prev_error = None;
                       continue;
                     }
@@ -159,7 +243,6 @@ impl PostMachine {
                     }
                     "d" => {
                       self.buffer.cmds.pop();
-                      self.buffer.cur -= 1;
                     }
                     _ => {
                       self.prev_error = Some(Error::UndefinedUserCommand);
@@ -180,12 +263,36 @@ impl PostMachine {
 
   }
 
-  fn coding_edit(&mut self, k:usize) {
-    print!("\x1B[2J\x1B[1;1H");
-    self.print_state();
-    println!();
-    self.print_buffer();
-    println!();
+  fn new_sp(&mut self) -> Result<(), Error> {
+    self.printui();
+    println!("Текущая скорость: {}мс", self.speedms);
+    println!("Введите новую скорость исполнения (мс или ENTER для отмены):");
+    let mut st = String::new();
+    io::stdin()
+      .read_line(&mut st)
+      .expect("Ошибка ввода");
+
+    if st.trim().is_empty() {
+      return Ok(());
+    }
+
+    match st.trim().parse::<u64>() {
+      Ok(n) => {
+        self.speedms = n;
+        self.message = Some(format!("Новая скорость: {}мс", self.speedms));
+      }
+      Err(_) => {
+        return Err(Error::WrongSpeed);
+      }
+    }
+
+    Ok(())
+    
+    
+  }
+
+  fn coding_edit(&mut self, k:usize) -> Result<(), Error>{
+    self.printui();
     println!("Нажмите ENTER чтобы отменить редактирование");
     print!("{} ", k);
 
@@ -197,13 +304,19 @@ impl PostMachine {
     st = st.trim().to_string();
 
     if !st.is_empty() {
-      self.edit_command(&st, k as usize);
+      if st.chars()
+            .next().unwrap() == '/' {
+          return Err(Error::CommandInEditMode);
+      }
+      else {
+        self.edit_command(&st, k as usize);
+      }  
     } 
+    Ok(())
   }
 
   fn insert_command(&mut self, command: &str) {
     self.buffer.cmds.push(command.to_owned());
-    self.buffer.cur += 1;
   }
 
   fn edit_command(&mut self, command: &str, n: usize) {
@@ -302,27 +415,94 @@ impl PostMachine {
     
     Ok(compile_commands)
   }
-
-  fn print_state(&self) {
-    for pos in self.tape.cur-8..=self.tape.cur+8 {
-      let val = self.tape.map.get(&pos).unwrap_or(&0);
-      print!("{}", val);
-    }
-    println!();
-    println!("        ^")
+ 
+  fn sleep(&mut self) {
+    thread::sleep(Duration::from_millis(self.speedms));
   }
 
-  fn print_buffer(&self) {
-    for i in 0..self.buffer.cmds.len() {
-      if (i == self.tape.cur.try_into().unwrap()) {
-        println!("> {} | {}", i+1, self.buffer.cmds[i]);
+  fn execute(&mut self, cmds: &Vec<Command>) {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let stop_clone = stop_flag.clone();
+    thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = io::stdin().read_line(&mut buf);
+        stop_clone.store(true, Ordering::SeqCst);
+    });
+    loop {
+
+      let mut st = String::new();
+      if stop_flag.load(Ordering::SeqCst) {
+          self.message = Some("Программа завершена нажатием ENTER!".to_string());
+          self.printui();
+          io::stdin()
+            .read_line(&mut st)
+            .expect("Ошибка ввода");
+          self.message = None;
+          self.buffer.cur = 0;
+          self.tape.cur = 0;
+          self.tape.map.clear();
+          return;
       }
-      else {
-        println!("  {} | {}", i+1, self.buffer.cmds[i]);
+
+      let ip = self.buffer.cur;
+      let tpi = self.tape.cur;
+      self.printui();
+      self.sleep();
+
+      match cmds[ip] {
+        Command::LeftGoto(j) => {
+          self.tape.cur -= 1;
+          self.printui();
+          self.buffer.cur = j;
+          self.sleep();
+        }
+        Command::RightGoto(j) => {
+          self.tape.cur += 1;
+          self.printui();
+          self.buffer.cur = j;
+          self.sleep();
+        }
+        Command::MarkGoto(j) => {
+          self.tape.map.insert(tpi, 1);
+          self.printui();
+          self.sleep();
+          self.buffer.cur = j;
+
+        }
+        Command::UnmarkGoto(j) => {
+          self.tape.map.remove(&tpi);
+          self.printui();
+          self.sleep();
+          self.buffer.cur = j;
+
+        }
+        Command::CheckOrGoto(j1, j2) => {
+          if let Some(_) = self.tape.map.get(&tpi) {
+            self.buffer.cur = j1;
+          }
+          else {
+            self.buffer.cur = j2;
+          }
+        }
+        Command::End => {
+          self.sleep();
+          self.message = Some("Замечена команда стоп! Завершаю программу...".to_string());
+          self.printui();
+          io::stdin()
+            .read_line(&mut st)
+            .expect("Ошибка ввода");
+          self.message = None;
+          self.buffer.cur = 0;
+          self.tape.cur = 0;
+          self.tape.map.clear();
+          return;
+        }
       }
+
+      
+
     }
   }
-
 }
 
 
