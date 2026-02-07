@@ -10,6 +10,7 @@ use std::io;
 
 struct Tape {
   map: HashMap<i64, u8>,
+  premap: HashMap<i64, u8>,
   cur: i64
 }
 struct Buffer {
@@ -48,6 +49,7 @@ impl PostMachine {
     Self {
       tape: Tape {
         map: HashMap::new(),
+        premap: HashMap::new(),
         cur: 0
       },
       buffer: Buffer {
@@ -202,7 +204,19 @@ impl PostMachine {
                 // TODO: доделай все обработки команд формата /...
                   match cmd_usr {
                     "r" => {
-
+                      self.tape.map.clear();
+                      self.tape.premap.clear();
+                      self.message = Some("Лента очищена!".to_string());
+                      self.prev_error = None;
+                      continue;
+                    }
+                    "rr" => {
+                      self.tape.map.clear();
+                      self.tape.premap.clear();
+                      self.buffer.cmds.clear();
+                      self.message = Some("Лента и буффер команд очищены!".to_string());
+                      self.prev_error = None;
+                      continue;
                     }
                     "s" => {
                       match self.compile_code() {
@@ -210,6 +224,7 @@ impl PostMachine {
                           self.prev_error = None;
                           self.message = None;
                           self.execute(&cmds);
+                          self.tape.map = self.tape.premap.clone();
                         }
                         Err(e) => {
                           self.prev_error = Some(e);
@@ -228,9 +243,6 @@ impl PostMachine {
                           }
 
                       }
-                    }
-                    "e" => {
-
                     }
                     "h" => {
                       let text = fs::read_to_string("src/help.txt").unwrap();
@@ -253,6 +265,16 @@ impl PostMachine {
                   
               }
             }
+      }
+      else if let Ok(n) = st.parse::<i64>() {
+        if let Some(_) = self.tape.map.get(&n) {
+          self.tape.map.remove(&n);
+          self.tape.premap.remove(&n);
+        } 
+        else {
+          self.tape.map.insert(n, 1);
+          self.tape.premap.insert(n, 1);
+        }
       }
       else {
         self.insert_command(&st);
