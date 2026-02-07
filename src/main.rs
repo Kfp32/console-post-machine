@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::thread;
 use std::fs;
-use ansi_term::Colour::{Green, Red};
+use ansi_term::Colour::{Red};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use tabled::{Table, builder::Builder, settings::{Style, Color, Modify, object::Rows,}};
+use tabled::{builder::Builder, settings::{Style, Color, Modify, object::Rows,}};
 use std::time::Duration;
 use std::process;
 use std::io;
@@ -32,6 +32,7 @@ enum Error {
   UndefinedCommand(usize, String),
   InvalidLine(usize),
   CommandInEditMode,
+  EmptyBufer,
   WrongSpeed
 }
 
@@ -57,7 +58,7 @@ impl PostMachine {
         cur: 0
       },
       prev_error: None,
-      message: Some("/h - справка".to_string()),
+      message: Some("/help - справка".to_string()),
       speedms: 300
     }
   }
@@ -73,22 +74,7 @@ impl PostMachine {
 
   fn printui(&mut self) {
     print!("\x1B[2J\x1B[1;1H");
-
-    
     let mut builder = Builder::default();
-    // for i in self.tape.cur-8..=self.tape.cur+8 {
-    //   if i < 0 || (i).abs() > 9 {
-    //     print!("{i} ");
-    //   }
-    //   else if i.abs() > 99 {
-    //     print!("{i}");
-    //   }
-    //   else {
-    //     print!(" {i} ");
-    //   }
-      
-    // }
-
     builder.push_record((self.tape.cur-8..=self.tape.cur+8).map(|i| i.to_string()));
     let mut v: Vec<String> = Vec::new();
     println!();
@@ -156,8 +142,21 @@ impl PostMachine {
         Error::WrongSpeed => {
           println!("Неправильный формат скорости!");
         }
+        Error::EmptyBufer => {
+          println!("Буфер команд пуст!");
+        }
       }
     }
+  }
+
+  fn printhelp(&mut self) {
+    print!("\x1B[2J\x1B[1;1H");
+    let text = fs::read_to_string("src/help.txt").unwrap();
+    println!("{text}");
+    let mut st = String::new();
+    io::stdin()
+      .read_line(&mut st)
+      .expect("Ошибка ввода");
   }
 
   fn coding(&mut self) {
@@ -214,11 +213,16 @@ impl PostMachine {
                       self.tape.map.clear();
                       self.tape.premap.clear();
                       self.buffer.cmds.clear();
-                      self.message = Some("Лента и буффер команд очищены!".to_string());
+                      self.message = Some("Лента и буфер команд очищены!".to_string());
                       self.prev_error = None;
                       continue;
                     }
                     "s" => {
+                      if self.buffer.cmds.is_empty() {
+                        self.prev_error = Some(Error::EmptyBufer);
+                        self.message = None;
+                        continue;
+                      }
                       match self.compile_code() {
                         Ok(cmds) => {
                           self.prev_error = None;
@@ -228,6 +232,7 @@ impl PostMachine {
                         }
                         Err(e) => {
                           self.prev_error = Some(e);
+                          self.message = None;
                           continue;
                         }
                       }                 
@@ -244,9 +249,9 @@ impl PostMachine {
 
                       }
                     }
-                    "h" => {
-                      let text = fs::read_to_string("src/help.txt").unwrap();
-                      self.message = Some(text);
+                    "help" => {
+                      self.printhelp();
+                      self.message = None;
                       self.prev_error = None;
                       continue;
                     }
@@ -485,6 +490,19 @@ impl PostMachine {
           self.sleep();
         }
         Command::MarkGoto(j) => {
+          if let Some(_) = self.tape.map.get(&tpi) {
+            self.sleep();
+            self.message = Some("Запись в помеченное поле! Программа завершена...".to_string());
+            self.printui();
+            io::stdin()
+              .read_line(&mut st)
+              .expect("Ошибка ввода");
+            self.message = None;
+            self.buffer.cur = 0;
+            self.tape.cur = 0;
+            self.tape.map.clear();
+            return;
+          }
           self.tape.map.insert(tpi, 1);
           self.printui();
           self.sleep();
@@ -492,6 +510,19 @@ impl PostMachine {
 
         }
         Command::UnmarkGoto(j) => {
+          if self.tape.map.get(&tpi).is_none() {
+            self.sleep();
+            self.message = Some("Стирание несуществующей метки! Программа завершена...".to_string());
+            self.printui();
+            io::stdin()
+              .read_line(&mut st)
+              .expect("Ошибка ввода");
+            self.message = None;
+            self.buffer.cur = 0;
+            self.tape.cur = 0;
+            self.tape.map.clear();
+            return;
+          }
           self.tape.map.remove(&tpi);
           self.printui();
           self.sleep();
