@@ -58,13 +58,13 @@ impl PostMachine {
         cur: 0
       },
       prev_error: None,
-      message: Some("/help - справка".to_string()),
+      message: Some("/h - справка".to_string()),
       speedms: 300
     }
   }
 
   pub fn init(&mut self) {
-    println!("Машина Поста v0.1");
+    println!("Машина Поста v1.2.1");
     println!("Нажмите, чтобы начать...");
     let mut buf = String::new();
     io::stdin().read_line(&mut buf).unwrap();
@@ -75,10 +75,10 @@ impl PostMachine {
   fn printui(&mut self) {
     print!("\x1B[2J\x1B[1;1H");
     let mut builder = Builder::default();
-    builder.push_record((self.tape.cur-8..=self.tape.cur+8).map(|i| i.to_string()));
+    builder.push_record((self.tape.cur-5..=self.tape.cur+5).map(|i| i.to_string()));
     let mut v: Vec<String> = Vec::new();
     println!();
-    for pos in self.tape.cur-8..=self.tape.cur+8 {
+    for pos in self.tape.cur-5..=self.tape.cur+5 {
       let val = self.tape.map.get(&pos).unwrap_or(&0);
       if pos == self.tape.cur {
         let green_open  = Red.paint("{").to_string();
@@ -151,7 +151,29 @@ impl PostMachine {
 
   fn printhelp(&mut self) {
     print!("\x1B[2J\x1B[1;1H");
-    let text = fs::read_to_string("src/help.txt").unwrap();
+    let text = "Каждая команда имеет следующий синтаксис: 'K j'
+где K — действие каретки, j — номер следующей команды (отсылка).
+
+Всего для машины Поста существует шесть типов команд:
+ V j — поставить метку, перейти к j-й строке программы;
+ X j — стереть метку, перейти к j-й строке;
+ < j — сдвинуться влево, перейти к j-й строке;
+ > j — сдвинуться вправо, перейти к j-й строке;
+ ? j1 j2 — если в ячейке нет метки, то перейти к j1-й строке программы, иначе перейти к j2-й строке;
+ ! — конец программы («стоп», остановка).
+
+при вводе числа n: n-я клетка ленты будет помечена/очищена
+/h — справка
+/j, где j - номер существующе строки — редактирование существующей строки
+/s — запуск компилятора и исполнителя
+/d — удаление последней строки 
+/sp - текущая и новая скорость исполнения команд
+/r - очистка ленты
+/rr - очистка ленты и буфера команд
+/q - выход
+
+Нажмите ENTER для возвращения к редактированию. 
+";
     println!("{text}");
     let mut st = String::new();
     io::stdin()
@@ -249,7 +271,7 @@ impl PostMachine {
 
                       }
                     }
-                    "help" => {
+                    "h" => {
                       self.printhelp();
                       self.message = None;
                       self.prev_error = None;
