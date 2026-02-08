@@ -1,6 +1,6 @@
 [package]
 name = "post-machine"
-version = "0.1.0"
+version = "v1.2.1"
 edition = "2024"
 
 [dependencies]

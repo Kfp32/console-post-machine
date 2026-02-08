@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::thread;
-use std::fs;
 use ansi_term::Colour::{Red};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tabled::{builder::Builder, settings::{Style, Color, Modify, object::Rows,}};
@@ -32,7 +31,7 @@ enum Error {
   UndefinedCommand(usize, String),
   InvalidLine(usize),
   CommandInEditMode,
-  EmptyBufer,
+  EmptyBuffer,
   WrongSpeed
 }
 
@@ -89,6 +88,7 @@ impl PostMachine {
         v.push(val.to_string());
       }
     }
+
     builder.push_record(v);
     let mut table = builder.build();
     table.to_string();
@@ -142,7 +142,7 @@ impl PostMachine {
         Error::WrongSpeed => {
           println!("Неправильный формат скорости!");
         }
-        Error::EmptyBufer => {
+        Error::EmptyBuffer => {
           println!("Буфер команд пуст!");
         }
       }
@@ -241,7 +241,7 @@ impl PostMachine {
                     }
                     "s" => {
                       if self.buffer.cmds.is_empty() {
-                        self.prev_error = Some(Error::EmptyBufer);
+                        self.prev_error = Some(Error::EmptyBuffer);
                         self.message = None;
                         continue;
                       }
@@ -288,8 +288,7 @@ impl PostMachine {
                       continue;
                     }
 
-                  }
-                  
+                  }     
               }
             }
       }
@@ -336,8 +335,6 @@ impl PostMachine {
     }
 
     Ok(())
-    
-    
   }
 
   fn coding_edit(&mut self, k:usize) -> Result<(), Error>{
