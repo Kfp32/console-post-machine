@@ -81,8 +81,8 @@ impl PostMachine {
     for pos in self.tape.cur-8..=self.tape.cur+8 {
       let val = self.tape.map.get(&pos).unwrap_or(&0);
       if pos == self.tape.cur {
-        let green_open  = Red.paint(">").to_string();
-        let green_close = Red.paint("<").to_string();
+        let green_open  = Red.paint("{").to_string();
+        let green_close = Red.paint("}").to_string();
         v.push(format!("{green_open}{val}{green_close}"));
       }
       else {
