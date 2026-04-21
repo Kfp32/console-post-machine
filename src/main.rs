@@ -21,7 +21,8 @@ struct PostMachine {
   buffer: Buffer,
   prev_error: Option<Error>,
   message: Option<String>,
-  speedms: u64
+  speedms: u64,
+  save_tp: bool
 }
 
 enum Error {
@@ -59,7 +60,8 @@ impl PostMachine {
       },
       prev_error: None,
       message: Some("/h - справка".to_string()),
-      speedms: 300
+      speedms: 300,
+      save_tp: false
     }
   }
 
@@ -169,10 +171,11 @@ impl PostMachine {
 при вводе числа n: n-я клетка ленты будет помечена/очищена
 /h — справка
 /j, где j - номер существующе строки — редактирование существующей строки
-/s — запуск компилятора и исполнителя
+/s (-s) — запуск компилятора и исполнителя (сохранить результат работы 
+программы на ленте)
 /d — удаление последней строки 
 /sp - текущая и новая скорость исполнения команд
-/goto k - перейти к k-ой ячейке лент
+/goto k — перейти к k-ой ячейке ленты
 /r - очистка ленты
 /rr - очистка ленты и буфера команд
 /q - выход
@@ -224,7 +227,7 @@ impl PostMachine {
                 continue;
             }
 
-            match cmd_usr.parse::<usize>() {
+            match cmd.parse::<usize>() {
               Ok(v) => {
                 if v <= k && v > 0 {
                   self.prev_error = None;
@@ -243,7 +246,7 @@ impl PostMachine {
               }
               Err(_) => {
                 // TODO: доделай все обработки команд формата /...
-                  match cmd_usr {
+                  match cmd {
                     "r" => {
                       self.tape.map.clear();
                       self.tape.premap.clear();
@@ -265,12 +268,21 @@ impl PostMachine {
                         self.message = None;
                         continue;
                       }
+                      if arg == Some("-s") {
+                          self.save_tp = true;
+                      }
                       match self.compile_code() {
                         Ok(cmds) => {
                           self.prev_error = None;
                           self.message = None;
                           self.execute(&cmds);
-                          self.tape.map = self.tape.premap.clone();
+                          if !self.save_tp {
+                            self.tape.map = self.tape.premap.clone();
+                          }
+                          else {
+                            self.save_tp = false;
+                          }
+                          
                         }
                         Err(e) => {
                           self.prev_error = Some(e);
@@ -586,7 +598,9 @@ impl PostMachine {
           self.message = None;
           self.buffer.cur = 0;
           self.tape.cur = 0;
-          self.tape.map.clear();
+          if !self.save_tp {
+            self.tape.map.clear();
+          }
           return;
         }
       }
