@@ -518,7 +518,9 @@ impl PostMachine {
           self.message = None;
           self.buffer.cur = 0;
           self.tape.cur = 0;
-          self.tape.map.clear();
+          if !self.save_tp {
+            self.tape.map.clear();
+          }
           return;
       }
 
@@ -551,7 +553,9 @@ impl PostMachine {
             self.message = None;
             self.buffer.cur = 0;
             self.tape.cur = 0;
-            self.tape.map.clear();
+            if !self.save_tp {
+              self.tape.map.clear();
+            }
             return;
           }
           self.tape.map.insert(tpi, 1);
@@ -571,7 +575,9 @@ impl PostMachine {
             self.message = None;
             self.buffer.cur = 0;
             self.tape.cur = 0;
-            self.tape.map.clear();
+            if !self.save_tp {
+              self.tape.map.clear();
+            }
             return;
           }
           self.tape.map.remove(&tpi);
