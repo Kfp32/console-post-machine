@@ -27,6 +27,7 @@ struct PostMachine {
 enum Error {
   UndefinedUserCommand,
   InvalidUserLine,
+  InvalidTapeNum,
   InvalidFormat(usize),
   UndefinedCommand(usize, String),
   InvalidLine(usize),
@@ -124,6 +125,9 @@ impl PostMachine {
         Error::UndefinedUserCommand => {
           println!("Несуществующая команда!");
         }
+        Error::InvalidTapeNum => {
+          println!("/goto принимает только целые числа!")
+        }
         Error::InvalidUserLine => {
           println!("Несуществующая строка!");
         }
@@ -168,6 +172,7 @@ impl PostMachine {
 /s — запуск компилятора и исполнителя
 /d — удаление последней строки 
 /sp - текущая и новая скорость исполнения команд
+/goto k - перейти к k-ой ячейке лент
 /r - очистка ленты
 /rr - очистка ленты и буфера команд
 /q - выход
@@ -203,6 +208,21 @@ impl PostMachine {
             .next().unwrap() == '/' {
             
             let cmd_usr = &st[1..];
+
+            let mut parts = cmd_usr.split_whitespace();
+            let cmd = parts.next().unwrap_or("");
+            let arg = parts.next();
+
+            if cmd == "goto" {
+                if let Some(n) = arg.and_then(|s| s.parse::<i64>().ok()) {
+                  self.prev_error = None;
+                  self.message = None;
+                  self.tape.cur = n;
+                } else {
+                  self.prev_error = Some(Error::InvalidTapeNum);
+                }
+                continue;
+            }
 
             match cmd_usr.parse::<usize>() {
               Ok(v) => {
